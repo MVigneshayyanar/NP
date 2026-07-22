@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: sensory-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: sensory-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Django Core (internal API + Admin) ──
+  django-core:
+    build:
+      context: ./Backend/django-core
+      dockerfile: Dockerfile
+    container_name: sensory-django
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./Backend/django-core:/app
+      - django_media:/app/media
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput 2>/dev/null;
+             gunicorn sensory_ai.wsgi:application --bind 0.0.0.0:8000 --workers 3 --reload"
+
+  # ── Go Fiber Gateway (public edge) ──
+  go-gateway:
+    build:
+      context: ./Backend/go-gateway
+      dockerfile: Dockerfile
+    container_name: sensory-gateway
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - django-core
+    volumes:
+      - ./Backend/go-gateway:/app
+      - go_cache:/go/pkg/mod
+
+volumes:
+  postgres_data:
+  redis_data:
+  django_media:
+  go_cache:

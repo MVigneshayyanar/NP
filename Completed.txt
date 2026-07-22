@@ -1,0 +1,199 @@
+Sensory AI — Full-Stack Implementation Plan
+Build a Go Fiber gateway + Django backend + Flutter mobile app for sensory room analysis, all orchestrated with Docker Compose.
+
+User Review Required
+IMPORTANT
+
+Platform Choice — Flutter recommended. Your spec mentions both Jetpack Compose and Flutter. Given that your existing codebase (max-my-bill-1) is Flutter/Dart, and Flutter gives you iOS + Android from one codebase, I'll proceed with Flutter. Confirm or redirect.
+
+IMPORTANT
+
+LLM Provider. The spec references a "Multimodal LLM API" but doesn't name a provider. I'll stub the pipeline with an OpenAI-compatible API (GPT-4o / GPT-4 Vision style). The Go gateway will call it via REST. You can swap to Gemini, Claude, etc. later by changing the adapter. Please confirm or specify a provider + API key handling preference.
+
+IMPORTANT
+
+Paint Database API. Section 2.4 requires a 3rd-party paint database for color matching. There is no widely available free paint API. I'll build a local seed database of ~200 popular paint colors (Benjamin Moore / Sherwin-Williams style names + hex + LRV) and a nearest-color matching algorithm. You can plug in a real API later. Confirm this approach.
+
+WARNING
+
+Stripe Connect. Section 2.5 requires Stripe Connect for royalty payouts. I'll build the models, anonymization pipeline, and API stubs but will NOT connect to live Stripe in this initial build (requires your Stripe platform account, onboarding flow, and legal review). The code will be wired to a STRIPE_CONNECT_ENABLED=false feature flag.
+
+Open Questions
+JWT Secret Sharing: Django issues JWTs, Go verifies them. I'll use a shared JWT_SECRET env var in Docker Compose. Is RS256 (asymmetric) preferred, or is HS256 (symmetric shared secret) acceptable for now?
+→ Default: HS256 for simplicity, can migrate to RS256 later.
+
+Audio Processing: The spec says "ambient audio or audio-derived features." Should Go extract audio features (dB level, frequency spectrum) before sending to the LLM, or send raw audio? → Default: Extract basic dB level + duration in Go, send metadata to LLM (most multimodal LLMs don't accept raw audio well). Raw audio stored for future processing.
+
+Deployment Target: Docker Compose for local dev is clear. Any cloud target in mind (AWS ECS, GCP Cloud Run, etc.) for production?
+→ Default: Build for Docker Compose only; production deployment is out of scope for this phase.
+
+Proposed Changes
+The project will live under c:\NP\ with this structure:
+
+
+c:\NP\
+├── docker-compose.yml
+├── .env.example
+├── Backend/
+│   ├── go-gateway/          # Go Fiber edge gateway
+│   │   ├── Dockerfile
+│   │   ├── go.mod / go.sum
+│   │   ├── main.go
+│   │   ├── config/
+│   │   ├── middleware/       # auth, rate-limit, multipart
+│   │   ├── handlers/         # analyze, proxy
+│   │   ├── services/         # llm, color-matching, django-client
+│   │   └── models/           # request/response structs
+│   └── django-core/          # Django + DRF
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       ├── manage.py
+│       ├── sensory_ai/       # Django project settings
+│       ├── core/             # User, SensoryProfile, EnvironmentScan, Recommendation
+│       ├── api/              # DRF serializers, viewsets, urls
+│       └── data_export/      # Anonymization, research data pipeline
+├── App/
+│   └── sensory_ai/           # Flutter app
+│       ├── lib/
+│       │   ├── main.dart
+│       │   ├── theme/        # Color tokens, typography, theme data
+│       │   ├── models/       # Data models
+│       │   ├── services/     # API client, auth, storage
+│       │   ├── providers/    # State management (Riverpod)
+│       │   └── screens/      # All screens
+│       │       ├── splash/
+│       │       ├── auth/
+│       │       ├── onboarding/
+│       │       ├── home/
+│       │       ├── scan/
+│       │       ├── coach/
+│       │       ├── progress/
+│       │       └── profile/
+│       └── pubspec.yaml
+└── scripts/                  # Helper scripts (seed data, etc.)
+Docker Compose & Infrastructure
+[NEW] 
+docker-compose.yml
+5 services: postgres, redis, django-core, go-gateway, flutter-web (optional for testing)
+Postgres 16 with a sensory_ai database, persistent volume
+Redis 7 for caching and future Celery queue
+Django on port 8000 (internal only, not exposed to host in production)
+Go gateway on port 3000 (public-facing)
+Shared .env for secrets (JWT key, DB creds, LLM API key)
+[NEW] 
+.env.example
+Template for all environment variables
+Django Core (Backend/django-core/)
+[NEW] 
+Dockerfile
+Python 3.12 slim, pip install requirements, gunicorn entrypoint
+[NEW] 
+requirements.txt
+Django 5.1, djangorestframework, psycopg2-binary, PyJWT, django-cors-headers, gunicorn, celery, redis, django-filter
+[NEW] 
+sensory_ai/settings.py
+Postgres connection from env vars, REST framework config, JWT settings, CORS for Go gateway
+[NEW] Core Models (core/models.py)
+Model	Key Fields
+User	Extended Django user: tier (residential/corporate), profile pic, country, occupation, living_situation, property_status
+SensoryProfile	FK→User: light_sensitivity (0-100), sound_sensitivity, texture_sensitivity, color_sensitivity, goals (JSONField), daily_routine, sleep_schedule, bedtime
+EnvironmentScan	FK→User: image_ref, audio_ref, llm_output (JSONField), environment_score, focus_score, sleep_score, mood_score, timestamp
+Recommendation	FK→EnvironmentScan: category (lighting/noise/texture/layout), priority, title, action_text, is_applied, is_dismissed
+[NEW] Admin (core/admin.py)
+Register User, EnvironmentScan with list display, search, filters
+[NEW] DRF API (api/)
+POST /internal/auth/register/ — create user + issue JWT
+POST /internal/auth/login/ — authenticate + issue JWT
+GET /internal/auth/me/ — current user from JWT
+GET/PUT /internal/profile/{user_id}/ — SensoryProfile CRUD
+POST /internal/scans/ — create EnvironmentScan
+GET /internal/scans/?user_id=X — list scans for user
+POST /internal/recommendations/ — bulk create recommendations
+GET /internal/recommendations/?scan_id=X — list by scan
+GET /internal/progress/{user_id}/ — aggregated progress data (weekly scores, deltas)
+[NEW] Data Export (data_export/)
+AnonymizedScan model — stores scan data with anonymized UUID instead of user_id
+AnonymizationMapping model — secured table mapping real user_id ↔ anon UUID (encrypted, audit-logged)
+anonymize_scan() service function — strips PII, generates one-way token, writes to research table
+Stripe Connect stub: RoyaltyLedger model, compute_royalties() placeholder
+Go Fiber Gateway (Backend/go-gateway/)
+[NEW] 
+Dockerfile
+Go 1.22, multi-stage build (build → scratch/alpine)
+[NEW] 
+main.go
+Fiber app setup, route registration, middleware chain
+[NEW] Middleware (middleware/)
+auth.go — JWT verification (HS256, shared secret), extracts user_id into context
+ratelimit.go — token bucket per user, configurable via env
+multipart.go — multipart form parsing helper (max file sizes, allowed types)
+[NEW] Handlers (handlers/)
+proxy.go — reverse proxy to Django for /api/v1/auth/*, /api/v1/profile/*, /api/v1/scans/*, /api/v1/progress/*
+analyze.go — the POST /api/v1/analyze-environment orchestration:
+Parse multipart (image + audio)
+Call Django GET /internal/profile/{user_id}/ for SensoryProfile
+Build LLM payload (image base64, audio metadata, profile)
+Call LLM service
+Validate response against JSON schema
+Color-match hex codes
+Save scan + recommendations to Django via POST
+Return structured response to client
+[NEW] Services (services/)
+llm.go — OpenAI-compatible multimodal API client; system prompt with JSON schema enforcement + renter/owner constraints; timeout + retry logic
+colormatch.go — in-memory paint database (~200 colors); nearest-color algorithm (CIEDE2000 or simple Euclidean in LAB color space); returns paint name, code, LRV
+django_client.go — HTTP client for Django internal API calls
+schema.go — JSON schema validator for LLM responses
+Flutter Mobile App (App/sensory_ai/)
+[NEW] Theme (lib/theme/)
+colors.dart — all color tokens from Section 3 as a single source of truth
+typography.dart — Inter font family, weight/size scale
+theme.dart — ThemeData built from tokens (light theme; dark theme stub for later)
+[NEW] Models (lib/models/)
+user.dart, sensory_profile.dart, environment_scan.dart, recommendation.dart
+JSON serialization with json_serializable
+[NEW] Services (lib/services/)
+api_client.dart — Dio-based HTTP client, base URL = Go gateway, JWT interceptor
+auth_service.dart — login, register, Google SSO stub, secure token storage (flutter_secure_storage)
+scan_service.dart — image compression (flutter_image_compress), audio recording (record package), multipart upload
+[NEW] State Management (lib/providers/)
+Riverpod providers for auth state, user profile, scan results, progress data, coach messages
+[NEW] Screens (10 screens total)
+#	Screen	File	Key Widgets
+1	Splash	screens/splash/splash_screen.dart	Centered logo on green bg, auto-navigate after 2s
+2	Login	screens/auth/login_screen.dart	Email/password fields, Google SSO button, sign-up link
+3	Register	screens/auth/register_screen.dart	Email/password/confirm, green CTA
+4	Profile Setup	screens/onboarding/profile_setup_screen.dart	Name, age, country, occupation, living situation toggles, property status toggle
+5	Sensory Assessment	screens/onboarding/sensory_assessment_screen.dart	4 custom sliders (0-100) with green fill, icon chips
+6	Goals	screens/onboarding/goals_screen.dart	Multi-select chips, time pickers, notification toggle
+7	Home	screens/home/home_screen.dart	Ring gauge, recommendation card, quick actions, progress bars
+8	Scan Room	screens/scan/scan_room_screen.dart	CameraX/camera plugin full-screen, viewfinder overlay, audio recording
+9	AI Coach	screens/coach/coach_screen.dart	Chat bubbles (green user / gray AI), text input + mic
+10	Progress	screens/progress/progress_screen.dart	Ring gauge, metric cards with deltas, weekly line chart (fl_chart)
+11	Profile	screens/profile/profile_screen.dart	Avatar, stats row, goals list, settings
+[NEW] Navigation
+lib/router.dart — GoRouter with auth guard, bottom nav shell route (Home, Coach, Progress, Profile) with a centered green FAB
+Build Order (matches Section 6 of the spec)
+Phase	Deliverable	Dependencies
+1	Docker Compose skeleton — all 4 services boot, Postgres + Redis healthy, Go ↔ Django connectivity verified	None
+2	Django models + migrations + admin panel	Phase 1
+3	Django DRF internal API (auth, profile, scans, recommendations, progress)	Phase 2
+4	Go Fiber gateway — auth passthrough proxy to Django, JWT middleware	Phase 3
+5	Flutter app scaffold — theme, navigation, splash, auth screens, onboarding — wired to real gateway	Phase 4
+6	LLM pipeline — mock endpoint first, then real multimodal call, JSON schema validation, color matching	Phase 4
+7	Scan Room → Home flow (camera capture, upload, display results)	Phase 5 + 6
+8	AI Coach + Progress + Profile screens	Phase 7
+9	Data anonymization pipeline + Stripe Connect stubs	Phase 8
+Verification Plan
+Automated Tests
+python manage.py test — Django model + API tests
+go test ./... — Go handler + service unit tests
+flutter test — Widget tests for key screens
+Manual Verification
+Docker Compose: docker-compose up — all services healthy
+End-to-end: Register → Login → Onboarding → Scan Room → View Results on Home screen
+Admin panel: verify EnvironmentScan records appear after a scan
+JWT flow: verify unauthorized requests are rejected at the Go gateway
+Integration Checks
+Go gateway → Django internal API: profile fetch, scan write
+Go gateway → LLM: mock response validates against JSON schema
+Flutter → Go gateway: multipart upload, auth token refresh
