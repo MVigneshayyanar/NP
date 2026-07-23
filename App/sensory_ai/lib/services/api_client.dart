@@ -6,9 +6,13 @@ import 'package:flutter/foundation.dart';
 /// API client configured to communicate with the Go Fiber gateway.
 /// Handles JWT token injection and refresh.
 class ApiClient {
-  static final String _baseUrl = kIsWeb
-      ? 'http://localhost:3000/api/v1'
-      : 'http://10.0.2.2:3000/api/v1';
+  static const String _productionBaseUrl =
+      'https://wholesome-gentleness-production-474b.up.railway.app/api/v1';
+
+  static final String _baseUrl = kDebugMode
+      ? (kIsWeb ? 'http://localhost:3000/api/v1' : 'http://10.0.2.2:3000/api/v1')
+      : _productionBaseUrl;
+
   static const String _tokenKey = 'jwt_token';
 
 
