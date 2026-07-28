@@ -26,6 +26,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         email = data.get('email', '').strip().lower()
         data['email'] = email
         
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({'email': 'An account with this email already exists.'})
+        
         # If user with email exists, append unique suffix or let login handle it
         if not data.get('username'):
             email_prefix = email.split('@')[0]
@@ -71,11 +74,10 @@ class LoginSerializer(serializers.Serializer):
 
         # Look up user by email if provided
         if email:
-            try:
-                user_obj = User.objects.get(email=email)
-                username = user_obj.username
-            except User.DoesNotExist:
+            user_obj = User.objects.filter(email=email).first()
+            if not user_obj:
                 raise serializers.ValidationError('Invalid credentials.')
+            username = user_obj.username
 
         user = authenticate(username=username, password=password)
         if not user:

@@ -1,13 +1,14 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:camera/camera.dart';
 import '../../theme/colors.dart';
 import '../../theme/typography.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/data_providers.dart';
 import '../../services/api_client.dart';
 
-/// Scan Room screen — full-screen camera view with viewfinder overlay.
 class ScanRoomScreen extends ConsumerStatefulWidget {
   const ScanRoomScreen({super.key});
 
@@ -16,18 +17,72 @@ class ScanRoomScreen extends ConsumerStatefulWidget {
 }
 
 class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
+  CameraController? _controller;
+  List<CameraDescription>? _cameras;
+  bool _isCameraInitialized = false;
   bool _isCapturing = false;
   bool _photoTaken = false;
   bool _recordingAudio = false;
   bool _isAnalyzing = false;
+  String? _errorMessage;
 
-  void _capturePhoto() {
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras != null && _cameras!.isNotEmpty) {
+        // Find the back camera
+        final backCamera = _cameras!.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras!.first,
+        );
+
+        _controller = CameraController(
+          backCamera,
+          ResolutionPreset.medium,
+          enableAudio: true,
+        );
+
+        await _controller!.initialize();
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+          });
+        }
+      } else {
+        setState(() {
+          _errorMessage = "No cameras found on this device.";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Failed to initialize camera: $e";
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _capturePhoto() async {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return;
+    }
+
     setState(() {
       _isCapturing = true;
     });
 
-    // Simulate camera capture
-    Future.delayed(const Duration(milliseconds: 500), () {
+    try {
+      final XFile photo = await _controller!.takePicture();
       if (mounted) {
         setState(() {
           _isCapturing = false;
@@ -35,50 +90,64 @@ class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
           _recordingAudio = true;
         });
 
-        // Auto-stop audio after 3 seconds
+        // Simulate recording ambient audio alongside camera capture
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted && _recordingAudio) {
             setState(() {
               _recordingAudio = false;
               _isAnalyzing = true;
             });
-            _analyze();
+            _analyze(photo.path);
           }
         });
       }
-    });
-  }
-
-  Future<void> _analyze() async {
-    try {
-      final user = ref.read(authProvider).user;
-      if (user != null) {
-        // Create scan in Django backend
-        await ApiClient().dio.post('/scans/', data: {
-          'user': user.id,
-          'room_name': 'Bedroom',
-          'environment_score': 88,
-          'focus_score': 85,
-          'sleep_score': 90,
-          'mood_score': 84,
-          'image_ref': 'assets/mock/bedroom_scan.jpg',
-          'llm_output': {
-            'analysis': 'Optimal warm lighting detected. Noise levels under 35dB.',
-          },
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+          _errorMessage = "Failed to capture photo: $e";
         });
-        // Invalidate providers to refetch fresh data
-        ref.invalidate(userScansProvider);
-        ref.invalidate(userProgressProvider);
-        ref.invalidate(recommendationsProvider);
       }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() => _isAnalyzing = false);
-      context.go('/home');
     }
   }
 
+  Future<void> _analyze(String imagePath) async {
+    try {
+      final user = ref.read(authProvider).user;
+      if (user != null) {
+        // Send image to backend for analysis via API Client
+        await ApiClient().analyzeEnvironment(
+          imagePath: imagePath,
+          roomName: 'Bedroom',
+        );
+
+        // Invalidate providers to fetch fresh data
+        ref.invalidate(userScansProvider);
+        ref.invalidate(userProgressProvider);
+        ref.invalidate(recommendationsProvider);
+
+        if (mounted) {
+          setState(() => _isAnalyzing = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Room analysis completed successfully!')),
+          );
+          context.go('/home');
+        }
+      }
+    } catch (e) {
+      debugPrint("Analysis error: $e");
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Analysis failed: ${e is DioException && e.response != null ? "Server returned error (${e.response?.statusCode}). Please try again." : (e.toString().contains("timeout") ? "Request timed out. Please try again." : "Could not reach server.")}'),
+            backgroundColor: AppColors.critical,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,31 +155,37 @@ class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera preview placeholder (full screen dark)
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: const Color(0xFF1A1A2E),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.camera_alt_rounded,
-                    size: 64,
-                    color: Colors.white.withOpacity(0.3),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Camera Preview',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 16,
+          // Camera preview or placeholder
+          Positioned.fill(
+            child: _isCameraInitialized && _controller != null
+                ? AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: CameraPreview(_controller!),
+                  )
+                : Container(
+                    color: const Color(0xFF1A1A2E),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.camera_alt_rounded,
+                            size: 64,
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _errorMessage ?? 'Initializing Camera...',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.5),
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
           ),
 
           // Corner bracket viewfinder overlay
@@ -159,9 +234,10 @@ class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
                                     : '✅ Done'))
                             : 'Frame your room',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500),
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 48),
@@ -171,7 +247,7 @@ class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
             ),
           ),
 
-          // Audio recording indicator
+          // Audio recording indicator overlay
           if (_recordingAudio)
             Positioned(
               top: MediaQuery.of(context).padding.top + 80,
@@ -285,7 +361,6 @@ class _ScanRoomScreenState extends ConsumerState<ScanRoomScreen> {
   }
 }
 
-/// Custom painter for the corner-bracket viewfinder overlay.
 class _ViewfinderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {

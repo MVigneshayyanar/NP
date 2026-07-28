@@ -9,9 +9,14 @@ class ApiClient {
   static const String _productionBaseUrl =
       'https://wholesome-gentleness-production-474b.up.railway.app/api/v1';
 
-  static final String _baseUrl = kDebugMode
-      ? (kIsWeb ? 'http://localhost:3000/api/v1' : 'http://10.0.2.2:3000/api/v1')
-      : _productionBaseUrl;
+  /// Set to true when testing on a physical device against the Railway backend.
+  /// Set to false when running locally with docker-compose.
+  static const bool _useProductionInDebug = true;
+
+  static final String _baseUrl = (!kDebugMode || _useProductionInDebug)
+      ? _productionBaseUrl
+      : (kIsWeb ? 'http://localhost:3000/api/v1' : 'http://10.0.2.2:3000/api/v1');
+
 
   static const String _tokenKey = 'jwt_token';
 
@@ -25,8 +30,8 @@ class ApiClient {
   ApiClient._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 60),
+      connectTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(minutes: 10),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

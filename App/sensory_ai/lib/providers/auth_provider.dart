@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
@@ -97,10 +98,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(status: AuthStatus.authenticated, user: user);
       return true;
     } catch (e) {
-      String msg = 'Invalid credentials. Please check your email and password.';
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
-        error: msg,
+        error: _extractError(e),
       );
       return false;
     }
@@ -136,6 +136,58 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   String _extractError(dynamic e) {
     if (e == null) return 'An unexpected error occurred.';
+    if (e is DioException) {
+      final response = e.response;
+      if (response != null) {
+        final data = response.data;
+        if (data is Map) {
+          if (data.containsKey('detail') && data['detail'] != null) {
+            return data['detail'].toString();
+          }
+          if (data.containsKey('error') && data['error'] != null) {
+            return data['error'].toString();
+          }
+          if (data.containsKey('message') && data['message'] != null) {
+            return data['message'].toString();
+          }
+          if (data.containsKey('non_field_errors') &&
+              data['non_field_errors'] is List &&
+              (data['non_field_errors'] as List).isNotEmpty) {
+            return (data['non_field_errors'] as List).first.toString();
+          }
+          for (final value in data.values) {
+            if (value is List && value.isNotEmpty) {
+              return value.first.toString();
+            } else if (value is String && value.isNotEmpty) {
+              return value;
+            }
+          }
+        }
+        final statusCode = response.statusCode;
+        if (statusCode == 400) {
+          return 'Invalid credentials or request data. Please try again.';
+        }
+        if (statusCode == 401) {
+          return 'Incorrect email or password. Please check your details.';
+        }
+        if (statusCode == 409) {
+          return 'An account with this email or username already exists.';
+        }
+        if (statusCode == 404) {
+          return 'Requested service endpoint not found (404).';
+        }
+        if (statusCode != null && statusCode >= 500) {
+          return 'Server error ($statusCode). The backend encountered an error processing your request.';
+        }
+        return 'Server returned error ($statusCode). Please try again.';
+      }
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return 'Request timed out. Please check your connection and try again.';
+      }
+      return 'Connection error. Could not reach server. Please check your network.';
+    }
     final str = e.toString();
     if (str.contains('400')) {
       return 'Invalid credentials or request data. Please try again.';
@@ -143,7 +195,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (str.contains('401')) {
       return 'Incorrect email or password. Please check your details.';
     }
-    return 'Connection error. Please verify server is running.';
+    return 'An unexpected error occurred. Please try again.';
   }
 }
 
