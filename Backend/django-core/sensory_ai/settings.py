@@ -69,16 +69,8 @@ WSGI_APPLICATION = 'sensory_ai.wsgi.application'
 # ── Database ──
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('POSTGRES_DB', 'neondb'),
-        'USER': os.environ.get('POSTGRES_USER', 'neondb_owner'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
-        'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
-        'OPTIONS': {
-            'sslmode': 'require' if os.environ.get('POSTGRES_HOST', '') != 'postgres' else 'prefer',
-        },
-
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 

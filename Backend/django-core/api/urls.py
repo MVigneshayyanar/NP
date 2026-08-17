@@ -25,4 +25,22 @@ urlpatterns = [
 
     # ── Progress ──
     path('progress/<uuid:user_id>/', views.ProgressView.as_view(), name='progress'),
+
+    # ── Dashboard ──
+    path('dashboard/stats/', views.DashboardStatsView.as_view(), name='dashboard-stats'),
+    path('dashboard/offices/', views.DashboardOfficesView.as_view(), name='dashboard-offices'),
+    path('dashboard/analyses/', views.DashboardAnalysesView.as_view(), name='dashboard-analyses'),
+    path('dashboard/chart/', views.DashboardChartView.as_view(), name='dashboard-chart'),
+    path('dashboard/users/', views.DashboardUsersView.as_view(), name='dashboard-users'),
+    path('dashboard/sensory-distribution/', views.DashboardSensoryDistributionView.as_view(), name='dashboard-sensory-distribution'),
+    path('dashboard/analytics/', views.DashboardAnalyticsChartView.as_view(), name='dashboard-analytics'),
+    path('dashboard/heatmap/', views.DashboardHeatmapView.as_view(), name='dashboard-heatmap'),
+    path('dashboard/analysis/', views.DashboardAnalysisView.as_view(), name='dashboard-analysis'),
+    path('dashboard/conflicts/', views.DashboardConflictsView.as_view(), name='dashboard-conflicts'),
+    path('dashboard/procurement/', views.DashboardProcurementView.as_view(), name='dashboard-procurement'),
+    path('dashboard/reports/', views.DashboardReportsView.as_view(), name='dashboard-reports'),
+    path('dashboard/settings/', views.DashboardSettingsView.as_view(), name='dashboard-settings'),
+    path('dashboard/header/', views.DashboardHeaderView.as_view(), name='dashboard-header'),
+    path('dashboard/floor-plans/', views.DashboardFloorPlanView.as_view(), name='dashboard-floor-plans'),
+    path('dashboard/users-meta/', views.DashboardUsersMetaView.as_view(), name='dashboard-users-meta'),
 ]

@@ -72,6 +72,17 @@ func main() {
 	v1.Post("/auth/register/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Post("/auth/login/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
+	// Dashboard routes (proxied to Django - NO AUTH FOR DEMO)
+	v1.Get("/dashboard/stats/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/offices/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/analyses/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/chart/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/users/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/sensory-distribution/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/analytics/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/dashboard/heatmap/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+
 	// Authenticated routes
 	authenticated := v1.Group("", middleware.AuthMiddleware(cfg.JWTSecret))
 	authenticated.Use(rateLimiter.Middleware())
@@ -90,12 +101,7 @@ func main() {
 	authenticated.Get("/scans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	authenticated.Get("/scans/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Recommendation routes (proxied to Django)
-	authenticated.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Patch("/recommendations/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Progress routes (proxied to Django)
-	authenticated.Get("/progress/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
 	// ── Gateway-owned route: Analyze Environment & AI Coach ──
 	authenticated.Post("/analyze-environment", analyzeHandler.Handle)

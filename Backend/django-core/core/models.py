@@ -62,6 +62,22 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Corporate fields
+    office = models.ForeignKey(
+        'Office',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+    )
+    department = models.ForeignKey(
+        'Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+    )
+
     # Stripe Connect
     stripe_connect_account_id = models.CharField(max_length=255, blank=True)
     stripe_connect_onboarded = models.BooleanField(default=False)
@@ -73,6 +89,64 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.full_name or self.username} ({self.email})"
+
+
+class Office(models.Model):
+    """
+    Corporate Office/Location for enterprise users.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    region = models.CharField(max_length=100)
+    base_environmental_score = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    trend = models.FloatField(default=0.0)
+    
+    class Status(models.TextChoices):
+        HEALTHY = 'healthy', 'Healthy'
+        WATCH = 'watch', 'Watch'
+        ACTION = 'action', 'Action'
+        
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.HEALTHY,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'offices'
+        verbose_name = 'Office'
+        verbose_name_plural = 'Offices'
+
+    def __str__(self):
+        return f"{self.name} ({self.region})"
+
+
+class Department(models.Model):
+    """
+    Department within an Office.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    office = models.ForeignKey(
+        Office,
+        on_delete=models.CASCADE,
+        related_name='departments',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'departments'
+        verbose_name = 'Department'
+        verbose_name_plural = 'Departments'
+
+    def __str__(self):
+        return f"{self.name} - {self.office.name}"
 
 
 class SensoryProfile(models.Model):

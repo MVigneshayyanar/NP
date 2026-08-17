@@ -3,7 +3,7 @@ DRF Serializers for Sensory AI internal API.
 """
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from core.models import User, SensoryProfile, EnvironmentScan, Recommendation
+from core.models import User, SensoryProfile, EnvironmentScan, Recommendation, Office, Department, Office, Department
 
 
 # ── Auth Serializers ──
@@ -99,9 +99,66 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'full_name', 'age',
             'country', 'occupation', 'profile_picture',
             'living_situation', 'property_status', 'tier',
+            'office', 'department',
             'onboarding_completed', 'notifications_enabled',
             'created_at', 'updated_at',
         ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+# ── Corporate Serializers ──
+
+class SimpleDepartmentSerializer(serializers.ModelSerializer):
+    headcount = serializers.SerializerMethodField()
+    avg_visual = serializers.SerializerMethodField()
+    avg_audio = serializers.SerializerMethodField()
+    avg_tactile = serializers.SerializerMethodField()
+    env_score = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Department
+        fields = ['id', 'name', 'headcount', 'avg_visual', 'avg_audio', 'avg_tactile', 'env_score', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        
+    def get_headcount(self, obj):
+        return obj.employees.count()
+
+    def get_avg_visual(self, obj):
+        from django.db.models import Avg
+        avg = obj.employees.aggregate(a=Avg('sensory_profile__light_sensitivity'))['a']
+        return round(avg) if avg else 50
+
+    def get_avg_audio(self, obj):
+        from django.db.models import Avg
+        avg = obj.employees.aggregate(a=Avg('sensory_profile__sound_sensitivity'))['a']
+        return round(avg) if avg else 50
+
+    def get_avg_tactile(self, obj):
+        from django.db.models import Avg
+        avg = obj.employees.aggregate(a=Avg('sensory_profile__texture_sensitivity'))['a']
+        return round(avg) if avg else 50
+
+    def get_env_score(self, obj):
+        from django.db.models import Avg
+        avg = obj.employees.aggregate(a=Avg('scans__environment_score'))['a']
+        if avg:
+            return round(avg)
+        return obj.office.base_environmental_score if obj.office else 0
+
+class OfficeSerializer(serializers.ModelSerializer):
+    departments = SimpleDepartmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Office
+        fields = ['id', 'name', 'region', 'base_environmental_score', 'trend', 'status', 'departments', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    office = OfficeSerializer(read_only=True)
+    
+    class Meta:
+        model = Department
+        fields = ['id', 'name', 'office', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 

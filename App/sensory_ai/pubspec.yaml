@@ -49,6 +49,16 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.4.11
   json_serializable: ^6.8.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icons/applogo.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#9DD65D"
+  adaptive_icon_foreground: "assets/icons/applogo.png"
 
 flutter:
   uses-material-design: true

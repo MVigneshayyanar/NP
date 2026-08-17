@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from django.conf import settings
 from django.utils import timezone
 from django.db.models import Avg, Count
-from django.db.models.functions import TruncDate
+from django.db.models.functions import TruncDate, TruncMonth
 from rest_framework import generics, status, permissions, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -142,6 +142,7 @@ class RecommendationListCreateView(generics.ListCreateAPIView):
     GET /internal/recommendations/?scan_id=X — List recommendations by scan.
     POST /internal/recommendations/ — Create recommendations (supports bulk via list).
     """
+    permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -300,3 +301,344 @@ class ProgressView(APIView):
 
         serializer = ProgressSerializer(data)
         return Response(serializer.data)
+
+
+# ── Dashboard Views ──
+
+class DashboardStatsView(APIView):
+    """GET /internal/dashboard/stats/ — Corporate dashboard stats."""
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        from core.models import Office, Department, User
+        total_offices = Office.objects.count()
+        total_departments = Department.objects.count()
+        total_employees = User.objects.filter(tier='corporate').count()
+        
+        avg_score = Office.objects.aggregate(avg=Avg('base_environmental_score'))['avg']
+        
+        return Response({
+            'total_offices': total_offices,
+            'total_departments': total_departments,
+            'total_employees': total_employees,
+            'average_environmental_score': round(avg_score, 1) if avg_score else 0,
+        })
+
+class DashboardOfficesView(generics.ListCreateAPIView):
+    """GET /internal/dashboard/offices/ — List offices
+       POST /internal/dashboard/offices/ — Create office"""
+    from core.models import Office
+    from .serializers import OfficeSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Office.objects.all().order_by('name')
+    serializer_class = OfficeSerializer
+
+class DashboardAnalysesView(generics.ListAPIView):
+    """GET /internal/dashboard/analyses/ — Recent corporate scans."""
+    from core.models import EnvironmentScan
+    from .serializers import EnvironmentScanSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = EnvironmentScan.objects.filter(user__tier='corporate').order_by('-created_at')[:10]
+    serializer_class = EnvironmentScanSerializer
+
+class DashboardChartView(APIView):
+    """GET /internal/dashboard/chart/ — Time series data for chart."""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        
+        # Get data for the last 90 days
+        now = timezone.now()
+        three_months_ago = now - timedelta(days=90)
+        
+        scans = EnvironmentScan.objects.filter(
+            user__tier='corporate', 
+            created_at__gte=three_months_ago,
+            user__office__isnull=False
+        ).annotate(month=TruncMonth('created_at')).values('month', 'user__office__name').annotate(avg_score=Avg('environment_score')).order_by('month')
+        
+        data_by_month = {}
+        for scan in scans:
+            month_str = scan['month'].strftime('%b')
+            office_name = scan['user__office__name'].replace(' ', '_').replace('-', '_')
+            
+            if month_str not in data_by_month:
+                data_by_month[month_str] = {"date": month_str}
+            data_by_month[month_str][office_name] = round(scan['avg_score'])
+            
+        result = list(data_by_month.values())
+        if not result:
+            result = [{"date": now.strftime('%b')}]
+        return Response(result)
+
+class DashboardSensoryDistributionView(APIView):
+    """GET /internal/dashboard/sensory-distribution/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        from core.models import SensoryProfile
+        profiles = SensoryProfile.objects.filter(user__tier='corporate')
+        
+        avoidant = 0
+        balanced = 0
+        seeking = 0
+        
+        for p in profiles:
+            avg_sens = (p.light_sensitivity + p.sound_sensitivity + p.texture_sensitivity) / 3
+            if avg_sens > 66:
+                seeking += 1
+            elif avg_sens < 33:
+                avoidant += 1
+            else:
+                balanced += 1
+                
+        total = max(avoidant + balanced + seeking, 1)
+        
+        return Response([
+            {"name": "Sensory avoidant", "value": round((avoidant/total)*100), "fill": "#8FD14F"},
+            {"name": "Balanced", "value": round((balanced/total)*100), "fill": "#18C081"},
+            {"name": "Sensory seeking", "value": round((seeking/total)*100), "fill": "#F2A10B"},
+        ])
+
+class DashboardAnalyticsChartView(APIView):
+    """GET /internal/dashboard/analytics/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        from core.models import EnvironmentScan
+        from django.db.models.functions import TruncDay
+        from django.db.models import Avg
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        now = timezone.now()
+        two_weeks_ago = now - timedelta(days=14)
+        
+        scans = EnvironmentScan.objects.filter(
+            user__tier='corporate', 
+            created_at__gte=two_weeks_ago
+        ).annotate(day=TruncDay('created_at')).values('day').annotate(
+            avg_lighting=Avg('environment_score'), 
+            avg_noise=Avg('focus_score') 
+        ).order_by('day')
+        
+        lighting = []
+        noise = []
+        for s in scans:
+            day_str = s['day'].strftime('%a')
+            lighting.append({"day": day_str, "value": round(s['avg_lighting'])})
+            noise.append({"day": day_str, "value": round(s['avg_noise'])})
+            
+        return Response({"lighting": lighting, "noise": noise})
+
+class DashboardHeatmapView(APIView):
+    """GET /internal/dashboard/heatmap/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        from core.models import SensoryProfile
+        profiles = SensoryProfile.objects.filter(user__tier='corporate')
+        
+        cells = []
+        for p in profiles:
+            avg_sens = (p.light_sensitivity + p.sound_sensitivity + p.texture_sensitivity) / 3
+            if avg_sens > 75:
+                color = "#F43F5E" # red
+            elif avg_sens > 60:
+                color = "#F68CA3" # pink
+            elif avg_sens > 45:
+                color = "#FACC4D" # yellow
+            elif avg_sens > 30:
+                color = "#67E393" # light green
+            else:
+                color = "#22C55E" # green
+                
+            cells.append({"id": str(p.id), "color": color})
+            
+        return Response(cells)
+
+class DashboardUsersView(generics.ListAPIView):
+    """GET /internal/dashboard/users/ — Corporate users."""
+    from core.models import User
+    from .serializers import UserSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = User.objects.filter(tier='corporate').order_by('first_name', 'username')
+    serializer_class = UserSerializer
+
+class DashboardAnalysisView(APIView):
+    """GET /internal/dashboard/analysis/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "scores": {
+                "environmental": {"value": 82, "trend": "+3.4", "color": "#8ED14B"},
+                "lighting": {"value": 76, "trend": "+1.1", "color": "#F59E0B"},
+                "acoustic": {"value": 68, "trend": "-2.2", "color": "#14B8A6"},
+                "air": {"value": 89, "trend": "+0.6", "color": "#22C55E"}
+            },
+            "actions": [
+                {"title": "Acoustic panels - Meeting 4A", "impact": "Impact +6 pts · $2.4k", "priority": "HIGH"},
+                {"title": "Dimmable fixtures - Focus Pods", "impact": "Impact +4 pts · $6.1k", "priority": "MED"},
+                {"title": "Add greenery - Lounge", "impact": "Impact +2 pts · $780", "priority": "LOW"}
+            ]
+        })
+
+class DashboardConflictsView(APIView):
+    """GET /internal/dashboard/conflicts/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "Noise": {
+                "impact": "-12.4% productivity",
+                "conflicts": [
+                    {"title": "Quiet zone adjacent to collaboration hub", "zones": "Quiet Library ↔ Collab Hub", "severity": "HIGH"},
+                    {"title": "Meeting room echo bleed into focus pods", "zones": "Meeting 4A ↔ Focus Pods A", "severity": "MED"},
+                    {"title": "Glare from west windows on screens", "zones": "Focus Pods A", "severity": "MED"},
+                    {"title": "Foot-traffic through relaxation lounge", "zones": "Relax Lounge", "severity": "LOW"}
+                ]
+            },
+            "Lighting": {
+                "impact": "-8.1% productivity",
+                "conflicts": [
+                    {"title": "Glare from west windows on screens", "zones": "Focus Pods A", "severity": "HIGH"},
+                    {"title": "Overhead brightness inconsistency", "zones": "Open Workspace", "severity": "MED"}
+                ]
+            },
+            "Traffic Flow": {
+                "impact": "-10.2% productivity",
+                "conflicts": [
+                    {"title": "Cross-circulation near meeting rooms", "zones": "Main Corridor", "severity": "HIGH"},
+                    {"title": "Crowding at lounge entrance", "zones": "Relax Lounge", "severity": "MED"}
+                ]
+            },
+            "Privacy": {
+                "impact": "-6.8% productivity",
+                "conflicts": [
+                    {"title": "Visual privacy exposure", "zones": "Focus Pods", "severity": "MED"}
+                ]
+            },
+            "Accessibility": {
+                "impact": "-5.4% productivity",
+                "conflicts": [
+                    {"title": "Wheelchair turning radius issue", "zones": "East Wing", "severity": "MED"}
+                ]
+            },
+            "Temperature": {
+                "impact": "-7.3% productivity",
+                "conflicts": [
+                    {"title": "Localized overheating", "zones": "South Zone", "severity": "HIGH"}
+                ]
+            },
+            "Occupancy": {
+                "impact": "-9.5% productivity",
+                "conflicts": [
+                    {"title": "High occupancy concentration", "zones": "Collaboration Hub", "severity": "HIGH"}
+                ]
+            }
+        })
+
+class DashboardProcurementView(APIView):
+    """GET /internal/dashboard/procurement/
+       POST /internal/dashboard/procurement/"""
+    permission_classes = [permissions.AllowAny]
+    
+    _orders = [
+        {"product": "FeltBloc Acoustic Panel 24×48", "qty": 42, "cost": 3738, "vendor": "FeltBloc Inc.", "priority": "HIGH", "status": "Approved"},
+        {"product": "Dimmable LED 2700K (10-pk)", "qty": 18, "cost": 1620, "vendor": "LumenWorks", "priority": "HIGH", "status": "Pending"},
+        {"product": "Wool Loop Rug 8×10", "qty": 6, "cost": 2394, "vendor": "Nordic Textile", "priority": "MED", "status": "Approved"},
+        {"product": "Blackout Motorized Blinds", "qty": 12, "cost": 4680, "vendor": "Shade Systems", "priority": "MED", "status": "Draft"},
+        {"product": "Biophilic Planters (set)", "qty": 24, "cost": 1152, "vendor": "Verdant Co.", "priority": "LOW", "status": "Approved"}
+    ]
+
+    def get(self, request):
+        return Response({
+            "orders": DashboardProcurementView._orders,
+            "cost_breakdown": [
+                {"label": "Acoustic", "color": "#3B82F6", "value": "26%"},
+                {"label": "Lighting", "color": "#F59E0B", "value": "24%"},
+                {"label": "Textiles", "color": "#EF4444", "value": "18%"},
+                {"label": "Shading", "color": "#10B981", "value": "24%"},
+                {"label": "Biophilic", "color": "#A855F7", "value": "8%"}
+            ]
+        })
+
+    def post(self, request):
+        order = request.data
+        DashboardProcurementView._orders.append(order)
+        return Response(order, status=status.HTTP_201_CREATED)
+
+class DashboardReportsView(APIView):
+    """GET /internal/dashboard/reports/"""
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "recent_reports": [
+                {"title": "Q3 2026 • Portfolio wellness review", "date": "Oct 3, 2026"},
+                {"title": "SF HQ • Floor 4 remodel projection", "date": "Sep 21, 2026"},
+                {"title": "Acoustic remediation ROI", "date": "Sep 12, 2026"},
+                {"title": "Berlin Loft opening baseline", "date": "Aug 30, 2026"}
+            ],
+            "environmental_improvements": [
+                ["Jan", "72"], ["Feb", "74"], ["Mar", "77"], ["Apr", "79"],
+                ["May", "81"], ["Jun", "86"], ["Jul", "88"], ["Aug", "90"],
+                ["Sep", "94"], ["Oct", "97"], ["Nov", "100"], ["Dec", "104"]
+            ]
+        })
+
+class DashboardSettingsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({
+            "organization": { "name": "Acme Corporation", "url": "sensa.app/acme", "industry": "Technology", "size": "500–1,000" },
+            "standards": { "noise": 55, "illuminance": 450, "cct": 4000 }
+        })
+
+    def put(self, request):
+        return Response(request.data, status=status.HTTP_200_OK)
+
+class DashboardHeaderView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "user": {
+                "initials": "MK",
+                "name": "Maya Kwan",
+                "role": "Acme HQ • Admin"
+            },
+            "office": "Acme HQ"
+        })
+
+class DashboardFloorPlanView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "measurements": {
+                "width": "260px",
+                "height": "200px",
+                "x": "560",
+                "y": "100"
+            },
+            "capacity": "Optimal for 18–24 employees",
+            "zone": "Collab Hub"
+        })
+
+class DashboardUsersMetaView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        return Response({
+            "stats": {
+                "totalMembers": 141,
+                "activeSeats": 132,
+                "pendingInvites": 9,
+                "admins": 7
+            },
+            "roles": [
+                { "name": "Owner", "description": "Full billing, security, and workspace control", "count": 1 },
+                { "name": "Admin", "description": "Manage offices, users, and floor plans", "count": 6 },
+                { "name": "Facilities", "description": "Edit zones, procurement, and layouts", "count": 24 },
+                { "name": "Analyst", "description": "Read analytics and export reports", "count": 41 },
+                { "name": "Viewer", "description": "Read-only access to dashboards", "count": 76 }
+            ],
+            "invites": [
+                { "email": "ava.chen@acme.co", "role": "Viewer", "sent": "2 days ago" },
+                { "email": "kenji.tan@acme.co", "role": "Analyst", "sent": "5 days ago" },
+                { "email": "olivia.brown@acme.co", "role": "Facilities", "sent": "11 days ago" }
+            ]
+        })
