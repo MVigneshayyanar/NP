@@ -66,7 +66,7 @@ func main() {
 	})
 
 	// ── API v1 routes ──
-	v1 := app.Group("/api/v1")
+	v1 := app.Group("/internal")
 
 	// Public routes (no auth required) — proxied to Django
 	v1.Post("/auth/register/", handlers.ProxyHandler(cfg.DjangoBaseURL))
@@ -74,7 +74,7 @@ func main() {
 
 	// Dashboard routes (proxied to Django - NO AUTH FOR DEMO)
 	v1.Get("/dashboard/stats/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/offices/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/offices/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Get("/dashboard/analyses/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Get("/dashboard/chart/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Get("/dashboard/users/", handlers.ProxyHandler(cfg.DjangoBaseURL))
