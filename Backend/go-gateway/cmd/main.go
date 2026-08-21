@@ -65,57 +65,58 @@ func main() {
 		})
 	})
 
-	// ── API v1 routes ──
-	v1 := app.Group("/internal")
+	// ── Register Routes Helper for both /api/v1 (mobile) and /internal (web) ──
+	setupRoutes := func(router fiber.Router) {
+		// Public routes (no auth required) — proxied to Django
+		router.Post("/auth/register/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Post("/auth/login/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Public routes (no auth required) — proxied to Django
-	v1.Post("/auth/register/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Post("/auth/login/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		// Dashboard routes (proxied to Django - NO AUTH FOR DEMO)
+		router.Get("/dashboard/stats/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/offices/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/analyses/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/chart/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/users/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/sensory-distribution/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/analytics/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/dashboard/heatmap/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		
+		// Missing dashboard endpoints
+		router.All("/dashboard/header/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/floor-plans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/reports/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/users-meta/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/procurement/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/settings/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/analysis/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		router.All("/dashboard/conflicts/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Dashboard routes (proxied to Django - NO AUTH FOR DEMO)
-	v1.Get("/dashboard/stats/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/offices/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/analyses/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/chart/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/users/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/sensory-distribution/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/analytics/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/dashboard/heatmap/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	
-	// Missing dashboard endpoints
-	v1.All("/dashboard/header/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/floor-plans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/reports/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/users-meta/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/procurement/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/settings/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/analysis/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	v1.All("/dashboard/conflicts/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		// Authenticated routes
+		authenticated := router.Group("", middleware.AuthMiddleware(cfg.JWTSecret))
+		authenticated.Use(rateLimiter.Middleware())
 
-	// Authenticated routes
-	authenticated := v1.Group("", middleware.AuthMiddleware(cfg.JWTSecret))
-	authenticated.Use(rateLimiter.Middleware())
+		// Auth routes (proxied to Django)
+		authenticated.Get("/auth/me/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Put("/auth/user/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Patch("/auth/user/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Auth routes (proxied to Django)
-	authenticated.Get("/auth/me/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Put("/auth/user/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Patch("/auth/user/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		// Profile routes (proxied to Django)
+		authenticated.Get("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Put("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Patch("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Profile routes (proxied to Django)
-	authenticated.Get("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Put("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Patch("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		// Scan routes
+		authenticated.Get("/scans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Get("/scans/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
-	// Scan routes
-	authenticated.Get("/scans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
-	authenticated.Get("/scans/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		// ── Gateway-owned route: Analyze Environment & AI Coach ──
+		authenticated.Post("/analyze-environment", analyzeHandler.Handle)
+		authenticated.Post("/coach/chat", handlers.CoachChatHandler(llmService, djangoClient))
+	}
 
-
-
-	// ── Gateway-owned route: Analyze Environment & AI Coach ──
-	authenticated.Post("/analyze-environment", analyzeHandler.Handle)
-	authenticated.Post("/coach/chat", handlers.CoachChatHandler(llmService, djangoClient))
+	setupRoutes(app.Group("/api/v1"))
+	setupRoutes(app.Group("/internal"))
 
 
 	// Start server
