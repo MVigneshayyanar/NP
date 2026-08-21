@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,9 +36,11 @@ func Load() *Config {
 	rateLimitMax, _ := strconv.Atoi(getEnv("RATE_LIMIT_MAX", "30"))
 	rateLimitWindowSec, _ := strconv.Atoi(getEnv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
+	djangoURL := strings.TrimRight(getEnv("DJANGO_BASE_URL", "https://np-fex4.onrender.com"), "/")
+
 	return &Config{
 		Port:              getEnv("PORT", getEnv("GO_PORT", "3000")),
-		DjangoBaseURL:     getEnv("DJANGO_BASE_URL", "http://django-core:8000"),
+		DjangoBaseURL:     djangoURL,
 		JWTSecret:         getEnv("JWT_SECRET", "change-me"),
 		JWTAlgorithm:      getEnv("JWT_ALGORITHM", "HS256"),
 		LLMApiKey:         getEnv("LLM_API_KEY", ""),
