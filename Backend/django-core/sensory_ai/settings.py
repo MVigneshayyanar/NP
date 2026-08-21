@@ -119,10 +119,11 @@ REST_FRAMEWORK = {
     ],
 }
 
-# ── CORS (allow Go gateway) ──
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# ── CORS (allow Go gateway and frontend) ──
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://go-gateway:3000',
     'https://np-1-mabz.onrender.com',
 ]
