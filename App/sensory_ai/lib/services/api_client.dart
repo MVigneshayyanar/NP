@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 /// Handles JWT token injection and refresh.
 class ApiClient {
   static const String _productionBaseUrl =
-      'https://wholesome-gentleness-production-474b.up.railway.app/api/v1';
+      'https://np-1-mabz.onrender.com/api/v1';
 
   /// Set to true when testing on a physical device against the Railway backend.
   /// Set to false when running locally with docker-compose.

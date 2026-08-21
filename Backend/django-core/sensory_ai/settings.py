@@ -124,6 +124,7 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://go-gateway:3000',
+    'https://np-1-mabz.onrender.com',
 ]
 
 # ── Redis / Celery ──
