@@ -442,37 +442,61 @@ func (ls *LLMService) ChatWithCoachRAG(userMsg string, user *models.User, profil
 }
 
 func generateDynamicRAGAdvice(userMsg, userName string, lightSens, soundSens, textureSens, colorSens int, propertyStatus, goals, scansSummary string) string {
-	msgLower := strings.ToLower(userMsg)
+	msgTrimmed := strings.TrimSpace(strings.ToLower(userMsg))
 
-	// Dynamic response synthesis
-	var adviceParts []string
-
-	adviceParts = append(adviceParts, fmt.Sprintf("Hello %s! Based on your sensory profile (Light Sensitivity: %d/100, Sound: %d/100, Goals: %s):", userName, lightSens, soundSens, goals))
-
-	if strings.Contains(msgLower, "light") || strings.Contains(msgLower, "bright") || strings.Contains(msgLower, "lamp") || strings.Contains(msgLower, "headache") || strings.Contains(msgLower, "eye") {
-		if lightSens > 60 {
-			adviceParts = append(adviceParts, "Since you have higher light sensitivity, harsh cool-white overheads can cause visual fatigue. I recommend indirect, diffuse warm lighting (2700K–3000K) and utilizing sheer linen curtains to soften direct sunlight.")
-		} else {
-			adviceParts = append(adviceParts, "For optimal circadian alertness and focus, aim for 4000K natural daylight exposure in the morning, switching to warm layered accent lamps in the evening.")
-		}
-	} else if strings.Contains(msgLower, "noise") || strings.Contains(msgLower, "sound") || strings.Contains(msgLower, "quiet") || strings.Contains(msgLower, "echo") {
-		if soundSens > 60 {
-			adviceParts = append(adviceParts, "Given your acoustic sensitivity, dampening hard surface reverberation will dramatically boost your focus. Adding high-density textured rugs, heavy curtains, or soft fabric partitions will absorb mid-frequency sound reflections.")
-		} else {
-			adviceParts = append(adviceParts, "Introducing a subtle low-frequency soundscape (like brown noise or gentle binaural rhythms) can mask unpredictable environmental interruptions.")
-		}
-	} else if strings.Contains(msgLower, "sleep") || strings.Contains(msgLower, "night") || strings.Contains(msgLower, "bed") {
-		adviceParts = append(adviceParts, "To optimize your sleep sanctuary, begin lowering ambient light 60 minutes before bed, keep background sound below 35dB, and ensure natural tactile textures (like breathable cotton or weighted blankets) to signal sensory downtime.")
-	} else if strings.Contains(msgLower, "focus") || strings.Contains(msgLower, "work") || strings.Contains(msgLower, "desk") {
-		adviceParts = append(adviceParts, "For deep focus, position your workstation perpendicular to window light to eliminate screen glare, and keep your visual field minimalist with matte textures to prevent sensory overload.")
-	} else {
-		adviceParts = append(adviceParts, fmt.Sprintf("Looking at your environmental goals (%s), I suggest fine-tuning your space with warm 2700K task lighting, reducing flutter echoes with soft furnishings, and curating earthy calming tones.", goals))
+	// 1. Conversational Chit-chat & Greetings
+	if msgTrimmed == "how are you" || msgTrimmed == "how are you?" || strings.HasPrefix(msgTrimmed, "how are you") || strings.Contains(msgTrimmed, "how r u") {
+		return "I'm doing great, thank you for asking! I'm here and ready to help you optimize your living and working space for sensory wellness, better focus, and restorative sleep. How is your room feeling today?"
 	}
 
-	if propertyStatus == "renter" {
-		adviceParts = append(adviceParts, "All suggestions are 100% renter-friendly and non-permanent, requiring no structural modifications.")
+	if msgTrimmed == "hi" || msgTrimmed == "hello" || msgTrimmed == "hey" || strings.HasPrefix(msgTrimmed, "hi ") || strings.HasPrefix(msgTrimmed, "hello ") || strings.HasPrefix(msgTrimmed, "hey ") {
+		return fmt.Sprintf("Hello %s! Great to chat with you. How can I help you adjust your lighting, acoustics, or overall sensory space today?", userName)
 	}
 
-	return strings.Join(adviceParts, "\n\n")
+	if strings.Contains(msgTrimmed, "who are you") || strings.Contains(msgTrimmed, "what can you do") || strings.Contains(msgTrimmed, "what do you do") {
+		return "I'm your Sensory AI Coach! I analyze your sensory profile and environment scans to give you actionable, science-backed guidance on ambient lighting, acoustic balance, restorative colors, and room ergonomics to help you focus and recharge."
+	}
+
+	if strings.Contains(msgTrimmed, "thank") || strings.Contains(msgTrimmed, "thx") {
+		return "You're very welcome! Let me know whenever you'd like to explore more ways to elevate your space."
+	}
+
+	// 2. Specific Topic-Driven AI Advice
+	if strings.Contains(msgTrimmed, "light") || strings.Contains(msgTrimmed, "bright") || strings.Contains(msgTrimmed, "lamp") || strings.Contains(msgTrimmed, "glare") || strings.Contains(msgTrimmed, "bulb") {
+		if lightSens > 50 {
+			return "Since you are sensitive to harsh light, direct cool-white LEDs can quickly trigger visual fatigue and eye strain. I recommend switching to diffuse, warm lighting (2700K to 3000K) placed at eye level or below, and using sheer linen shades to filter harsh direct sunlight."
+		}
+		return "For clean, energized focus, position your desk perpendicular to natural daylight to avoid monitor glare. During the evening, switch off cool ceiling lights and use warm layered task lamps to support your circadian melatonin production."
+	}
+
+	if strings.Contains(msgTrimmed, "sound") || strings.Contains(msgTrimmed, "noise") || strings.Contains(msgTrimmed, "quiet") || strings.Contains(msgTrimmed, "echo") || strings.Contains(msgTrimmed, "loud") {
+		if soundSens > 50 {
+			return "Hard walls and exposed flooring create flutter echoes that amplify background noise. To create a calm acoustic sanctuary, add dense plush rugs, floor-length curtains, and acoustic felt panels to absorb mid-frequency sound waves."
+		}
+		return "To maintain steady concentration, consider continuous gentle background brown noise or biophilic soundscapes (like flowing water or rustling leaves) to mask sudden ambient audio spikes."
+	}
+
+	if strings.Contains(msgTrimmed, "sleep") || strings.Contains(msgTrimmed, "night") || strings.Contains(msgTrimmed, "bed") || strings.Contains(msgTrimmed, "insomnia") {
+		return "To optimize your sleep sanctuary, begin dimming all ambient lighting 60 minutes before bedtime. Keep background sound below 35dB, ensure breathable tactile bedding (such as washed cotton or linen), and keep your bedroom temperature between 65°F–68°F (18°C–20°C)."
+	}
+
+	if strings.Contains(msgTrimmed, "focus") || strings.Contains(msgTrimmed, "work") || strings.Contains(msgTrimmed, "desk") || strings.Contains(msgTrimmed, "productivity") {
+		return "For uninterrupted deep work, keep your primary field of view minimalist and free of visual clutter. Position indirect 4000K lighting across your desk, keep acoustic distractions minimal, and introduce a low-maintenance plant to provide gentle biophilic rest."
+	}
+
+	if strings.Contains(msgTrimmed, "headache") || strings.Contains(msgTrimmed, "tired") || strings.Contains(msgTrimmed, "overload") || strings.Contains(msgTrimmed, "stress") {
+		return "Sensory overload often stems from a combination of screen flicker, high-contrast overhead glare, and high ambient reverberation. Try stepping into a dim, quiet room for 5–10 minutes, lowering screen brightness, and taking slow diaphragmatic breaths."
+	}
+
+	if strings.Contains(msgTrimmed, "plant") || strings.Contains(msgTrimmed, "nature") || strings.Contains(msgTrimmed, "green") {
+		return "Biophilic design has a profound calming effect on the nervous system. Low-maintenance plants like Snake Plants, Pothos, or Peace Lilies improve air quality and provide soothing natural visual patterns that reduce heart rate and cortisol levels."
+	}
+
+	if strings.Contains(msgTrimmed, "color") || strings.Contains(msgTrimmed, "paint") || strings.Contains(msgTrimmed, "wall") {
+		return "For a restorative atmosphere, muted earthy tones like sage green, warm taupe, or soft slate blue promote tranquility and reduce cognitive load compared to high-saturation bright colors."
+	}
+
+	// 3. Holistic Personalized Response
+	return fmt.Sprintf("Based on your wellness goals (%s), fine-tuning your room with warm 2700K indirect lighting, adding soft textiles to absorb echo, and maintaining a clear visual workspace will create the greatest immediate improvement in your daily comfort.", goals)
 }
 

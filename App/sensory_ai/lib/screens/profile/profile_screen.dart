@@ -16,11 +16,21 @@ class ProfileScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final scansAsync = ref.watch(userScansProvider);
     final progressAsync = ref.watch(userProgressProvider);
+    final sensoryProfileAsync = ref.watch(sensoryProfileProvider);
 
     final scansList = scansAsync.valueOrNull ?? [];
     final progressData = progressAsync.valueOrNull ?? {};
+    final sensoryProfile = sensoryProfileAsync.valueOrNull ?? {};
     final scores = (progressData['scores'] as Map<String, dynamic>?) ?? {};
-    final envScore = (scores['environment'] as num?)?.toInt() ?? 85;
+    final envScore = (scores['environment'] as num?)?.toInt() ?? 0;
+
+    final lightSens = (sensoryProfile['light_sensitivity'] as num?)?.toInt() ?? 50;
+    final soundSens = (sensoryProfile['sound_sensitivity'] as num?)?.toInt() ?? 50;
+    final textureSens = (sensoryProfile['texture_sensitivity'] as num?)?.toInt() ?? 50;
+    final colorSens = (sensoryProfile['color_sensitivity'] as num?)?.toInt() ?? 50;
+    final rawGoals = sensoryProfile['goals'] as List<dynamic>? ?? ['better_sleep', 'improve_focus'];
+
+    final livingText = '${(user?.livingSituation ?? 'apartment').toUpperCase()} • ${(user?.propertyStatus ?? 'renter').toUpperCase()}';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -45,6 +55,21 @@ class ProfileScreen extends ConsumerWidget {
             Text(user?.email ?? '',
                 style: AppTypography.bodyMedium
                     .copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primaryGreen.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                livingText,
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.primaryGreen,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () {
@@ -65,9 +90,9 @@ class ProfileScreen extends ConsumerWidget {
                 _StatCard(label: 'Streak', value: scansList.isNotEmpty ? '${scansList.length} d' : '0 d'),
               ],
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
 
-            // My Goals
+            // Sensory Sensitivities Card (From Backend)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -79,13 +104,62 @@ class ProfileScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('My Goals', style: AppTypography.titleLarge),
-                  const SizedBox(height: 16),
-                  _GoalProgress(label: 'Better Sleep', progress: (envScore > 0) ? (envScore / 100.0) : 0.0),
-                  const SizedBox(height: 14),
-                  _GoalProgress(label: 'Improve Focus', progress: (envScore > 0) ? ((envScore * 0.9) / 100.0) : 0.0),
-                  const SizedBox(height: 14),
-                  _GoalProgress(label: 'Reduce Overload', progress: (envScore > 0) ? ((envScore * 0.85) / 100.0) : 0.0),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Sensory Sensitivities', style: AppTypography.titleLarge),
+                      IconButton(
+                        icon: const Icon(Icons.tune_rounded, size: 20, color: AppColors.primaryGreen),
+                        onPressed: () => context.push('/onboarding/sensory'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _GoalProgress(label: 'Light Sensitivity ($lightSens/100)', progress: lightSens / 100.0),
+                  const SizedBox(height: 12),
+                  _GoalProgress(label: 'Sound Sensitivity ($soundSens/100)', progress: soundSens / 100.0),
+                  const SizedBox(height: 12),
+                  _GoalProgress(label: 'Texture Sensitivity ($textureSens/100)', progress: textureSens / 100.0),
+                  const SizedBox(height: 12),
+                  _GoalProgress(label: 'Color Sensitivity ($colorSens/100)', progress: colorSens / 100.0),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // My Goals (From Backend)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('My Goals', style: AppTypography.titleLarge),
+                      IconButton(
+                        icon: const Icon(Icons.edit_note_rounded, size: 22, color: AppColors.primaryGreen),
+                        onPressed: () => context.push('/onboarding/goals'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...rawGoals.map((g) {
+                    final goalStr = g.toString().replaceAll('_', ' ').split(' ').map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : '').join(' ');
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _GoalProgress(
+                        label: goalStr,
+                        progress: envScore > 0 ? (envScore / 100.0) : 0.65,
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
