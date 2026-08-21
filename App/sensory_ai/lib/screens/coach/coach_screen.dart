@@ -130,7 +130,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
               itemCount: _messages.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index == _messages.length && _isLoading) {
-                  return const _ChatBubble(
+                  return _ChatBubble(
                     message: _ChatMessage(
                       text: 'AI Coach is analyzing your space...',
                       isUser: false,
@@ -217,7 +217,7 @@ class _ChatMessage {
   final bool isUser;
   final String? ctaText;
 
-  _ChatMessage({required this.text, required this.isUser, this.ctaText});
+  const _ChatMessage({required this.text, required this.isUser, this.ctaText});
 }
 
 class _ChatBubble extends StatelessWidget {
