@@ -204,7 +204,7 @@ func (ah *AnalyzeHandler) Handle(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(response)
 }
 
-// CoachChatHandler handles live AI Coach conversations with Gemini API.
+// CoachChatHandler handles live AI Coach conversations with RAG context and LLM.
 func CoachChatHandler(llm *services.LLMService, django *services.DjangoClient) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID := c.Locals("user_id").(string)
@@ -217,20 +217,17 @@ func CoachChatHandler(llm *services.LLMService, django *services.DjangoClient) f
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Message is required"})
 		}
 
+		// Retrieve RAG Context: Sensory Profile, User metadata, and Room Scans
 		profile, _ := django.GetSensoryProfile(userID, token)
-		lightSens := 50
-		soundSens := 50
-		if profile != nil {
-			lightSens = profile.LightSensitivity
-			soundSens = profile.SoundSensitivity
-		}
+		user, _ := django.GetUser(token)
+		scans, _ := django.GetScans(token)
 
-		reply, err := llm.ChatWithCoach(req.Message, lightSens, soundSens)
+		reply, err := llm.ChatWithCoachRAG(req.Message, user, profile, scans)
 		if err != nil || reply == "" {
 			if err != nil {
 				log.Printf("ChatWithCoach error: %v", err)
 			}
-			reply = fmt.Sprintf("Based on your sensory profile (Light: %d/100, Sound: %d/100), I recommend adjusting your ambient room environment for maximum comfort.", lightSens, soundSens)
+			reply = "I'm analyzing your sensory environment. To create an optimal space, focus on diffuse warm lighting (2700K) and reducing acoustic reflections with textured materials."
 		}
 
 		return c.JSON(fiber.Map{

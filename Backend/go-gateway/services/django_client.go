@@ -149,3 +149,43 @@ func (dc *DjangoClient) CreateRecommendations(recs []models.DjangoRecommendation
 
 	return nil
 }
+
+// GetScans retrieves the user's latest scans for RAG context.
+func (dc *DjangoClient) GetScans(token string) ([]map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/internal/scans/", dc.baseURL)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := dc.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching scans: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("django returned %d", resp.StatusCode)
+	}
+
+	var raw json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decoding scans: %w", err)
+	}
+
+	var list []map[string]interface{}
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list, nil
+	}
+
+	var paginated struct {
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.Unmarshal(raw, &paginated); err == nil {
+		return paginated.Results, nil
+	}
+
+	return nil, nil
+}

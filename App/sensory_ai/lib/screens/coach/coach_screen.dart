@@ -20,6 +20,7 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
   final _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
   bool _initialized = false;
+  bool _isLoading = false;
 
   void _initMessages() {
     if (_initialized) return;
@@ -27,44 +28,26 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
     final user = ref.read(authProvider).user;
     final userName = (user?.fullName.isNotEmpty == true ? user!.fullName : (user?.username ?? 'there')).split(' ').first;
 
-    _messages.addAll([
+    _messages.add(
       _ChatMessage(
         text:
-            'Hi $userName! I\'m your Sensory AI Coach. Based on your profile and room analysis, your current lighting and acoustic levels support a calm, restorative environment.',
-        isUser: false,
-        ctaText: 'View Personal Recommendations',
-      ),
-      _ChatMessage(
-        text: 'What improvements can I make today?',
-        isUser: true,
-      ),
-      _ChatMessage(
-        text:
-            'Here are your top personalized suggestions:\n\n1. **Use warm ambient lighting (2700K)** 1 hour before bedtime\n2. **Keep background noise under 40dB** during focus sessions\n3. **Maintain natural airflow** for optimal focus and energy',
+            'Hello $userName! I\'m your Sensory AI Coach. I analyze your sensory sensitivities, room scans, and environmental metrics to give you personalized neuro-wellness guidance.\n\nHow can I help optimize your space today?',
         isUser: false,
       ),
-    ]);
+    );
   }
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isLoading) return;
 
     setState(() {
       _messages.add(_ChatMessage(text: text, isUser: true));
+      _isLoading = true;
       _messageController.clear();
     });
 
-    // Scroll to bottom
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    _scrollToBottom();
 
     try {
       final response = await ApiClient().dio.post('/coach/chat', data: {'message': text});
@@ -78,13 +61,22 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
       if (mounted) {
         setState(() {
           _messages.add(_ChatMessage(
-            text: 'I am here to support your environment. Consider lowering blue light levels for better sensory rest.',
+            text: 'I recommend evaluating your ambient lighting and acoustic environment to support optimal sensory recovery.',
             isUser: false,
           ));
         });
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
     }
+  }
 
+  void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -135,8 +127,16 @@ class _CoachScreenState extends ConsumerState<CoachScreen> {
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
+              itemCount: _messages.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == _messages.length && _isLoading) {
+                  return const _ChatBubble(
+                    message: _ChatMessage(
+                      text: 'AI Coach is analyzing your space...',
+                      isUser: false,
+                    ),
+                  );
+                }
                 final msg = _messages[index];
                 return _ChatBubble(message: msg);
               },

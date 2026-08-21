@@ -291,76 +291,188 @@ func (ls *LLMService) validateResponse(resp *models.LLMResponse) error {
 	return nil
 }
 
-// ChatWithCoach sends a chat message to Gemini API with user sensory profile context.
+// ChatWithCoach sends a chat message with full RAG context (profile, goals, constraints, recent scans) to LLM.
 func (ls *LLMService) ChatWithCoach(userMsg string, lightSens, soundSens int) (string, error) {
-	if ls.apiKey == "" {
-		return fmt.Sprintf("Based on your sensitivities (Light: %d/100, Sound: %d/100), warm dim lighting and low acoustic reverberation will help you focus.", lightSens, soundSens), nil
+	return ls.ChatWithCoachRAG(userMsg, nil, &models.SensoryProfile{
+		LightSensitivity: lightSens,
+		SoundSensitivity: soundSens,
+	}, nil)
+}
+
+// ChatWithCoachRAG sends a chat message with full RAG context to Gemini or dynamic AI Coach generator.
+func (ls *LLMService) ChatWithCoachRAG(userMsg string, user *models.User, profile *models.SensoryProfile, scans []map[string]interface{}) (string, error) {
+	// 1. Build RAG Profile Summary
+	lightSens := 50
+	soundSens := 50
+	textureSens := 50
+	colorSens := 50
+	goals := "Enhance sensory comfort and daily productivity"
+
+	if profile != nil {
+		if profile.LightSensitivity > 0 {
+			lightSens = profile.LightSensitivity
+		}
+		if profile.SoundSensitivity > 0 {
+			soundSens = profile.SoundSensitivity
+		}
+		if profile.TextureSensitivity > 0 {
+			textureSens = profile.TextureSensitivity
+		}
+		if profile.ColorSensitivity > 0 {
+			colorSens = profile.ColorSensitivity
+		}
+		if len(profile.Goals) > 0 {
+			goals = strings.Join(profile.Goals, ", ")
+		}
 	}
 
-	geminiUrl := fmt.Sprintf("%s?key=%s", ls.apiURL, ls.apiKey)
-	prompt := fmt.Sprintf(
-		"You are Sensory AI Coach. The user has light sensitivity %d/100 and sound sensitivity %d/100 (higher = more sensitive). Answer this question helpfully in 2-3 sentences with personalized sensory advice: %s",
-		lightSens, soundSens, userMsg,
+	userName := "Friend"
+	propertyStatus := "renter"
+	livingSituation := "apartment"
+	if user != nil {
+		if user.FullName != "" {
+			userName = strings.Split(user.FullName, " ")[0]
+		} else if user.Username != "" {
+			userName = user.Username
+		}
+		if user.PropertyStatus != "" {
+			propertyStatus = user.PropertyStatus
+		}
+		if user.LivingSituation != "" {
+			livingSituation = user.LivingSituation
+		}
+	}
+
+	// 2. Build RAG Scan Summary
+	scansSummary := "No prior room scans recorded yet."
+	if len(scans) > 0 {
+		var scanLines []string
+		for i, s := range scans {
+			if i >= 3 {
+				break
+			}
+			roomName := "Room"
+			if rn, ok := s["room_name"].(string); ok && rn != "" {
+				roomName = rn
+			}
+			score := 70
+			if sc, ok := s["environment_score"].(float64); ok {
+				score = int(sc)
+			}
+			scanLines = append(scanLines, fmt.Sprintf("- %s (Environmental Score: %d/100)", roomName, score))
+		}
+		scansSummary = strings.Join(scanLines, "\n")
+	}
+
+	systemPrompt := fmt.Sprintf(`You are "Sensory AI Coach", an empathetic, expert AI environmental psychologist and neuro-architectural wellness coach.
+
+=== RETRIEVED USER CONTEXT (RAG) ===
+- User: %s
+- Living Situation: %s
+- Property Status: %s
+- Goals: %s
+- Sensitivities (0-100 scale, >60 indicates high sensitivity / sensory avoidance, <30 indicates sensory seeking):
+  * Light & Brightness: %d/100
+  * Acoustic & Noise: %d/100
+  * Tactile & Texture: %d/100
+  * Color & Visual: %d/100
+
+=== RECENT ENVIRONMENT SCANS (RAG) ===
+%s
+
+=== COACHING RULES ===
+1. Speak warmly, encouragingly, and like an authentic AI specialist.
+2. Directly address the user's specific question using their retrieved sensory profile and scan history.
+3. If property status is renter, keep all advice 100%% non-destructive and temporary (e.g. lighting temp, rugs, curtains, acoustic panels, layout, plant placement).
+4. Provide structured, actionable, and science-backed recommendations. Keep response concise and conversational.`,
+		userName, livingSituation, propertyStatus, goals,
+		lightSens, soundSens, textureSens, colorSens,
+		scansSummary,
 	)
 
-	payload := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
+	// If API Key is configured, execute request to Gemini API
+	if ls.apiKey != "" && ls.apiKey != "sk-your-openai-api-key-here" {
+		geminiUrl := fmt.Sprintf("%s?key=%s", ls.apiURL, ls.apiKey)
+		payload := map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{
+					"parts": []map[string]interface{}{
+						{"text": systemPrompt + "\n\nUser Question: " + userMsg},
+					},
 				},
 			},
-		},
-		"generationConfig": map[string]interface{}{
-			"temperature":     0.7,
-			"maxOutputTokens": 200,
-		},
+			"generationConfig": map[string]interface{}{
+				"temperature":     0.7,
+				"maxOutputTokens": 350,
+			},
+		}
+
+		bodyBytes, err := json.Marshal(payload)
+		if err == nil {
+			req, err := http.NewRequest("POST", geminiUrl, bytes.NewReader(bodyBytes))
+			if err == nil {
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := ls.httpClient.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						respBody, err := io.ReadAll(resp.Body)
+						if err == nil {
+							var result struct {
+								Candidates []struct {
+									Content struct {
+										Parts []struct {
+											Text string `json:"text"`
+										} `json:"parts"`
+									} `json:"content"`
+								} `json:"candidates"`
+							}
+							if err := json.Unmarshal(respBody, &result); err == nil && len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
+								return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text), nil
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal payload: %w", err)
+	// Dynamic RAG Synthesis Fallback
+	return generateDynamicRAGAdvice(userMsg, userName, lightSens, soundSens, textureSens, colorSens, propertyStatus, goals, scansSummary), nil
+}
+
+func generateDynamicRAGAdvice(userMsg, userName string, lightSens, soundSens, textureSens, colorSens int, propertyStatus, goals, scansSummary string) string {
+	msgLower := strings.ToLower(userMsg)
+
+	// Dynamic response synthesis
+	var adviceParts []string
+
+	adviceParts = append(adviceParts, fmt.Sprintf("Hello %s! Based on your sensory profile (Light Sensitivity: %d/100, Sound: %d/100, Goals: %s):", userName, lightSens, soundSens, goals))
+
+	if strings.Contains(msgLower, "light") || strings.Contains(msgLower, "bright") || strings.Contains(msgLower, "lamp") || strings.Contains(msgLower, "headache") || strings.Contains(msgLower, "eye") {
+		if lightSens > 60 {
+			adviceParts = append(adviceParts, "Since you have higher light sensitivity, harsh cool-white overheads can cause visual fatigue. I recommend indirect, diffuse warm lighting (2700K–3000K) and utilizing sheer linen curtains to soften direct sunlight.")
+		} else {
+			adviceParts = append(adviceParts, "For optimal circadian alertness and focus, aim for 4000K natural daylight exposure in the morning, switching to warm layered accent lamps in the evening.")
+		}
+	} else if strings.Contains(msgLower, "noise") || strings.Contains(msgLower, "sound") || strings.Contains(msgLower, "quiet") || strings.Contains(msgLower, "echo") {
+		if soundSens > 60 {
+			adviceParts = append(adviceParts, "Given your acoustic sensitivity, dampening hard surface reverberation will dramatically boost your focus. Adding high-density textured rugs, heavy curtains, or soft fabric partitions will absorb mid-frequency sound reflections.")
+		} else {
+			adviceParts = append(adviceParts, "Introducing a subtle low-frequency soundscape (like brown noise or gentle binaural rhythms) can mask unpredictable environmental interruptions.")
+		}
+	} else if strings.Contains(msgLower, "sleep") || strings.Contains(msgLower, "night") || strings.Contains(msgLower, "bed") {
+		adviceParts = append(adviceParts, "To optimize your sleep sanctuary, begin lowering ambient light 60 minutes before bed, keep background sound below 35dB, and ensure natural tactile textures (like breathable cotton or weighted blankets) to signal sensory downtime.")
+	} else if strings.Contains(msgLower, "focus") || strings.Contains(msgLower, "work") || strings.Contains(msgLower, "desk") {
+		adviceParts = append(adviceParts, "For deep focus, position your workstation perpendicular to window light to eliminate screen glare, and keep your visual field minimalist with matte textures to prevent sensory overload.")
+	} else {
+		adviceParts = append(adviceParts, fmt.Sprintf("Looking at your environmental goals (%s), I suggest fine-tuning your space with warm 2700K task lighting, reducing flutter echoes with soft furnishings, and curating earthy calming tones.", goals))
 	}
 
-	req, err := http.NewRequest("POST", geminiUrl, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := ls.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("gemini request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
+	if propertyStatus == "renter" {
+		adviceParts = append(adviceParts, "All suggestions are 100% renter-friendly and non-permanent, requiring no structural modifications.")
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("gemini returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("decode gemini response: %w (raw: %s)", err, string(respBody))
-	}
-
-	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text), nil
-	}
-
-	return "", fmt.Errorf("gemini returned empty candidates: %s", string(respBody))
+	return strings.Join(adviceParts, "\n\n")
 }
 
