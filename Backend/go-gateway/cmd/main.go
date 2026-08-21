@@ -106,8 +106,18 @@ func main() {
 		authenticated.Put("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 		authenticated.Patch("/profile/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
+		// Progress routes (proxied to Django)
+		authenticated.Get("/progress/:user_id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+
+		// Recommendation routes (proxied to Django)
+		authenticated.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Post("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Patch("/recommendations/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Put("/recommendations/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+
 		// Scan routes
 		authenticated.Get("/scans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+		authenticated.Post("/scans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 		authenticated.Get("/scans/:id/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
 		// ── Gateway-owned route: Analyze Environment & AI Coach ──
