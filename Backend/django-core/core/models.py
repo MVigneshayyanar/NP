@@ -347,3 +347,26 @@ class Recommendation(models.Model):
 
     def __str__(self):
         return f"[{self.priority}] {self.title} ({self.category})"
+
+
+class WorkspaceSettings(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Organization Profile
+    organization_name = models.CharField(max_length=255, default="Acme Corporation")
+    workspace_url = models.CharField(max_length=255, default="sensa.app/acme")
+    industry = models.CharField(max_length=100, default="Technology")
+    company_size = models.CharField(max_length=50, default="500–1,000")
+    
+    # Default Sensory Standards
+    noise_standard = models.IntegerField(default=55, help_text="dB(A)")
+    illuminance_standard = models.IntegerField(default=450, help_text="lux")
+    cct_standard = models.IntegerField(default=4000, help_text="Kelvin")
+
+    class Meta:
+        db_table = 'workspace_settings'
+        verbose_name = 'Workspace Settings'
+        verbose_name_plural = 'Workspace Settings'
+
+    def __str__(self):
+        return f"Workspace Settings - {self.organization_name}"

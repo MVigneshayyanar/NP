@@ -13,7 +13,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import User, SensoryProfile, EnvironmentScan, Recommendation
+from core.models import User, SensoryProfile, EnvironmentScan, Recommendation, WorkspaceSettings
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserSerializer, UserUpdateSerializer,
     SensoryProfileSerializer, EnvironmentScanSerializer, EnvironmentScanCreateSerializer,
@@ -585,12 +585,50 @@ class DashboardSettingsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
+        settings, _ = WorkspaceSettings.objects.get_or_create(
+            # Using defaults for the initial object if none exists
+            defaults={
+                "organization_name": "Acme Corporation",
+                "workspace_url": "sensa.app/acme",
+                "industry": "Technology",
+                "company_size": "500–1,000",
+                "noise_standard": 55,
+                "illuminance_standard": 450,
+                "cct_standard": 4000
+            }
+        )
         return Response({
-            "organization": { "name": "Acme Corporation", "url": "sensa.app/acme", "industry": "Technology", "size": "500–1,000" },
-            "standards": { "noise": 55, "illuminance": 450, "cct": 4000 }
+            "organization": { 
+                "name": settings.organization_name, 
+                "url": settings.workspace_url, 
+                "industry": settings.industry, 
+                "size": settings.company_size 
+            },
+            "standards": { 
+                "noise": settings.noise_standard, 
+                "illuminance": settings.illuminance_standard, 
+                "cct": settings.cct_standard 
+            }
         })
 
     def put(self, request):
+        settings, _ = WorkspaceSettings.objects.get_or_create()
+        data = request.data
+        
+        org_data = data.get('organization', {})
+        std_data = data.get('standards', {})
+        
+        settings.organization_name = org_data.get('name', settings.organization_name)
+        settings.workspace_url = org_data.get('url', settings.workspace_url)
+        settings.industry = org_data.get('industry', settings.industry)
+        settings.company_size = org_data.get('size', settings.company_size)
+        
+        settings.noise_standard = std_data.get('noise', settings.noise_standard)
+        settings.illuminance_standard = std_data.get('illuminance', settings.illuminance_standard)
+        settings.cct_standard = std_data.get('cct', settings.cct_standard)
+        
+        settings.save()
+        
         return Response(request.data, status=status.HTTP_200_OK)
 
 class DashboardHeaderView(APIView):

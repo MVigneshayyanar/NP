@@ -82,6 +82,16 @@ func main() {
 	v1.Get("/dashboard/analytics/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Get("/dashboard/heatmap/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 	v1.Get("/recommendations/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	
+	// Missing dashboard endpoints
+	v1.All("/dashboard/header/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/floor-plans/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/reports/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/users-meta/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/procurement/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/settings/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/analysis/", handlers.ProxyHandler(cfg.DjangoBaseURL))
+	v1.All("/dashboard/conflicts/", handlers.ProxyHandler(cfg.DjangoBaseURL))
 
 	// Authenticated routes
 	authenticated := v1.Group("", middleware.AuthMiddleware(cfg.JWTSecret))
