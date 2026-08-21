@@ -36,7 +36,7 @@ func Load() *Config {
 	rateLimitWindowSec, _ := strconv.Atoi(getEnv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 	return &Config{
-		Port:              getEnv("GO_PORT", "3000"),
+		Port:              getEnv("PORT", getEnv("GO_PORT", "3000")),
 		DjangoBaseURL:     getEnv("DJANGO_BASE_URL", "http://django-core:8000"),
 		JWTSecret:         getEnv("JWT_SECRET", "change-me"),
 		JWTAlgorithm:      getEnv("JWT_ALGORITHM", "HS256"),
