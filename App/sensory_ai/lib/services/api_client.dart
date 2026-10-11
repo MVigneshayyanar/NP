@@ -9,9 +9,9 @@ class ApiClient {
   static const String _productionBaseUrl =
       'https://np-1-mabz.onrender.com/api/v1';
 
-  /// Set to true when testing on a physical device against the Railway backend.
-  /// Set to false when running locally with docker-compose.
-  static const bool _useProductionInDebug = true;
+  /// Set to true when testing against the deployed cloud backend.
+  /// Set to false when running locally.
+  static const bool _useProductionInDebug = false;
 
   static final String _baseUrl = (!kDebugMode || _useProductionInDebug)
       ? _productionBaseUrl
